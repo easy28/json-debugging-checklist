@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The JSON Debugging Checklist — every common JSON error and its 30-second fix</title>
+<meta name="description" content="Symptom → cause → fix for the JSON errors developers hit most: Unexpected token, trailing commas, escaped strings, encoding issues, schema mismatches. Every recommended tool runs 100% client-side.">
+<style>
+  :root { --ink:#1a2332; --mut:#5a6a7f; --line:#e3e8ef; --acc:#2f6f4f; --bg:#fbfcfd; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.65 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:1.9rem; line-height:1.25; margin:.2em 0 .4em; }
+  h2 { font-size:1.25rem; margin:2.2em 0 .6em; padding-bottom:.25em; border-bottom:1px solid var(--line); }
+  p.lede { font-size:1.06rem; color:var(--mut); }
+  table { border-collapse:collapse; width:100%; margin:1em 0 1.4em; font-size:.95rem; background:#fff; }
+  th,td { border:1px solid var(--line); padding:.55em .7em; text-align:left; vertical-align:top; }
+  th { background:#f2f5f8; font-weight:600; }
+  code { background:#eef2f6; padding:.12em .35em; border-radius:4px; font-size:.88em; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  a { color:var(--acc); }
+  .tag { display:inline-block; font-size:.72rem; font-weight:600; letter-spacing:.03em; color:#fff; background:var(--acc); border-radius:4px; padding:.15em .5em; vertical-align:middle; }
+  .note { background:#f2f7f4; border-left:3px solid var(--acc); padding:.8em 1em; border-radius:0 6px 6px 0; margin:1.2em 0; font-size:.95rem; }
+  footer { margin-top:3em; padding-top:1.2em; border-top:1px solid var(--line); color:var(--mut); font-size:.85rem; }
+  ul.checks { padding-left:1.2em; }
+  ul.checks li { margin:.35em 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>The JSON Debugging Checklist</h1>
+<p class="lede">Every common JSON failure, what actually causes it, and the fastest fix. Each recommended tool is <strong>100% client-side</strong> — paste your payload, and nothing leaves your browser.</p>
+
+<h2>1 · <code>Unexpected token &lt;x&gt; in JSON at position N</code></h2>
+<p>The error everyone hits first. The parser stopped at the first character it couldn't reconcile — the position is exact, but the <em>cause</em> is usually one line above or below it.</p>
+<table>
+  <tr><th>Symptom</th><th>Real cause</th><th>Fix</th></tr>
+  <tr><td><code>Unexpected token } </code> / <code>,]</code></td><td>Trailing comma before <code>}</code> or <code>]</code> — legal in JS object literals, illegal in JSON</td><td><a href="https://jsonformatter.app/tools/json-validator">JSON validator with auto-repair</a> fixes it in one click</td></tr>
+  <tr><td><code>Unexpected token '</code></td><td>Single-quoted keys or string values (<code>{'a': 1}</code>)</td><td>Same <a href="https://jsonformatter.app/tools/json-validator">validator</a> — it quotes them properly</td></tr>
+  <tr><td><code>Unexpected token /</code></td><td>JavaScript-style <code>//</code> or <code>/* */</code> comments</td><td>Strip them, or validate as JSONC with the <a href="https://jsonformatter.app/tools/jsonc-validator">JSONC validator</a></td></tr>
+  <tr><td><code>Unexpected token &lt;</code></td><td>You're parsing an HTML error page (500, login redirect, rate-limit page), not JSON</td><td>Look at the <em>first</em> characters of the payload; log the raw response before parsing</td></tr>
+  <tr><td><code>Unexpected token ﻿</code> / error at position 0</td><td>UTF-8 BOM or invisible whitespace copied from a PDF/webpage</td><td><a href="https://jsonformatter.app/tools/json-unescape">Unescape &amp; clean the string</a>, then re-validate</td></tr>
+</table>
+<div class="note">Chrome 114+ changed how V8 words JSON syntax errors, which silently broke a wave of tools that parsed V8's error strings. A scanner written against the JSON spec keeps reporting exact line/column regardless of browser updates — <a href="https://jsonformatter.app/news/json-validator-error-locations">here's why that matters</a>.</div>
+
+<h2>2 · Escaped JSON inside JSON</h2>
+<p>Logs, queues, and webhooks love to double-encode: a JSON string whose <em>value</em> is another JSON document full of <code>\"</code> and <code>\n</code>.</p>
+<ul class="checks">
+  <li><span class="tag">CHECK</span> Does the payload start with a quote <code>"</code> instead of <code>{</code>? It's an escaped string → <a href="https://jsonformatter.app/tools/json-unescape">unescape it</a>, then validate the inner document</li>
+  <li><span class="tag">CHECK</span> Need the reverse (embed JSON as a string value)? <a href="https://jsonformatter.app/tools/json-escape">Escape JSON</a> and get a copy-paste-ready literal</li>
+  <li><span class="tag">CHECK</span> Payload arrived Base64-wrapped? <a href="https://jsonformatter.app/tools/base64-to-json">Base64 → JSON</a> handles lenient/URL-safe variants</li>
+  <li><span class="tag">CHECK</span> Sending JSON inside a header or cookie? <a href="https://jsonformatter.app/tools/json-to-base64">JSON → Base64</a></li>
+</ul>
+
+<h2>3 · "My JSON is valid but the API rejects it"</h2>
+<p>Syntactically valid ≠ what the endpoint expects. Contracts break in three ways: wrong types (<code>"42"</code> vs <code>42</code>), missing required fields, and values that violate a format (<code>date-time</code>, <code>email</code>, <code>uri</code>).</p>
+<ul class="checks">
+  <li><span class="tag">CHECK</span> No schema yet? <a href="https://jsonformatter.app/tools/json-schema-generator">Generate a JSON Schema</a> (draft 2020-12) from a sample payload, tighten it, keep it as the contract</li>
+  <li><span class="tag">CHECK</span> Schema exists? Validate against it with the <a href="https://jsonformatter.app/tools/json-schema-validator">schema validator</a> — you get the failing path, not just "invalid"</li>
+</ul>
+
+<h2>4 · Extracting one value from a 4,000-line payload</h2>
+<ul class="checks">
+  <li><span class="tag">CHECK</span> Point queries ("every <code>items[*].sku</code>") → <a href="https://jsonformatter.app/tools/json-path">JSONPath evaluator</a> with live match counts</li>
+  <li><span class="tag">CHECK</span> Reshaping/filtering/grouping → <a href="https://jsonformatter.app/tools/jq-online">jq online</a> — real jq 1.8 compiled to WebAssembly, same filter language as the CLI: <code>map(select(.status=="failed"))</code>, <code>group_by(.role)</code>, <code>sort_by(-.latency)</code></li>
+</ul>
+
+<h2>5 · Comparing two payloads</h2>
+<p>"Why did the response change after the deploy?" Diff them structurally — key order shouldn't matter, so a text diff lies.</p>
+<ul class="checks">
+  <li><span class="tag">CHECK</span> <a href="https://jsonformatter.app/tools/json-diff">JSON diff</a> shows added/removed/changed nodes side by side, with a tree view for deep objects</li>
+</ul>
+
+<h2>6 · Converting JSON to something else</h2>
+<table>
+  <tr><th>Target</th><th>Tool</th></tr>
+  <tr><td>CSV (rows/columns)</td><td><a href="https://jsonformatter.app/tools/json-to-csv">JSON → CSV</a></td></tr>
+  <tr><td>TypeScript types</td><td><a href="https://jsonformatter.app/tools/json-to-typescript">JSON → TypeScript</a></td></tr>
+  <tr><td>Python models</td><td><a href="https://jsonformatter.app/tools/json-to-python">JSON → Python</a></td></tr>
+  <tr><td>Java classes</td><td><a href="https://jsonformatter.app/tools/json-to-java">JSON → Java</a></td></tr>
+  <tr><td>Rust structs</td><td><a href="https://jsonformatter.app/tools/json-to-rust">JSON → Rust</a></td></tr>
+  <tr><td>Go structs</td><td><a href="https://jsonformatter.app/tools/json-to-go">JSON → Go</a></td></tr>
+  <tr><td>C# classes</td><td><a href="https://jsonformatter.app/tools/json-to-csharp">JSON → C#</a></td></tr>
+  <tr><td>YAML / TOML / XML</td><td><a href="https://jsonformatter.app/tools/json-to-yaml">→ YAML</a> · <a href="https://jsonformatter.app/tools/json-to-toml">→ TOML</a> · <a href="https://jsonformatter.app/tools/json-to-xml">→ XML</a></td></tr>
+</table>
+
+<h2>7 · Shipping: size, ordering, and dialects</h2>
+<ul class="checks">
+  <li><span class="tag">CHECK</span> Payload too big for a log line or a cache entry? <a href="https://jsonformatter.app/tools/json-minifier">Minify</a> with before/after size stats</li>
+  <li><span class="tag">CHECK</span> Diffing or eyeballing is easier with sorted keys → <a href="https://jsonformatter.app/tools/json-sorter">Sort keys</a> (recursive, with depth/scope options)</li>
+  <li><span class="tag">CHECK</span> Config allows comments/trailing commas? That's <a href="https://jsonformatter.app/tools/json5-formatter">JSON5</a> or <a href="https://jsonformatter.app/tools/jsonc-validator">JSONC</a> — don't feed them to a strict parser</li>
+  <li><span class="tag">CHECK</span> NDJSON / JSON Lines streams fail as one document → validate <a href="https://jsonformatter.app/news/ndjson-line-counts-and-errors">line by line</a></li>
+</ul>
+
+<h2>8 · Before you paste into any web tool</h2>
+<div class="note">In November 2025, watchTowr Labs disclosed that CodeBeautify.org had been <strong>exposing user-pasted payloads</strong> — API keys, SSH keys, cloud credentials — through a public "Recent Links" feed. Most "online tools" still POST your data to a server. The 30-second audit: open DevTools → Network, clear, paste, hit format. Any request carrying your payload = it left your machine. Full breakdown: <a href="https://jsonformatter.app/news/codebeautify-data-leak-explained">the CodeBeautify leak explained</a> · <a href="https://jsonformatter.app/news/secure-json-formatter-online">what makes a JSON formatter actually secure</a>.</div>
+
+<footer>
+  <p>Every tool linked above lives at <a href="https://jsonformatter.app">jsonformatter.app</a> — a client-side JSON toolkit (formatter, validator, jq, JSONPath, diff, converters, schema tools). Free, no account, no cookies; after page load it makes zero network requests.</p>
+</footer>
+</main>
+</body>
+</html>
