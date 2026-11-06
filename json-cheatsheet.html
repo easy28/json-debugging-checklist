@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The JSON Escape &amp; Encoding Cheat Sheet — escapes, number traps, and the JSON format family</title>
+<meta name="description" content="Every JSON string escape, Unicode surrogate pairs, BOM and invisible-character traps, IEEE-754 number precision limits, and how JSON, JSON5, JSONC and NDJSON actually differ. Every recommended tool runs 100% client-side.">
+<style>
+  :root { --ink:#1a2332; --mut:#5a6a7f; --line:#e3e8ef; --acc:#2f6f4f; --bg:#fbfcfd; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.65 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); }
+  main { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:1.9rem; line-height:1.25; margin:.2em 0 .4em; }
+  h2 { font-size:1.25rem; margin:2.2em 0 .6em; padding-bottom:.25em; border-bottom:1px solid var(--line); }
+  p.lede { font-size:1.06rem; color:var(--mut); }
+  table { border-collapse:collapse; width:100%; margin:1em 0 1.4em; font-size:.95rem; background:#fff; }
+  th,td { border:1px solid var(--line); padding:.55em .7em; text-align:left; vertical-align:top; }
+  th { background:#f2f5f8; font-weight:600; }
+  code { background:#eef2f6; padding:.12em .35em; border-radius:4px; font-size:.88em; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  a { color:var(--acc); }
+  .note { background:#f2f7f4; border-left:3px solid var(--acc); padding:.8em 1em; border-radius:0 6px 6px 0; margin:1.2em 0; font-size:.95rem; }
+  footer { margin-top:3em; padding-top:1.2em; border-top:1px solid var(--line); color:var(--mut); font-size:.85rem; }
+  ul.checks { padding-left:1.2em; }
+  ul.checks li { margin:.35em 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>The JSON Escape &amp; Encoding Cheat Sheet</h1>
+<p class="lede">The string escapes that actually exist, the numbers that lie to you, the invisible characters that break parsers, and the real differences between JSON, JSON5, JSONC and NDJSON. Every tool recommended below is <strong>100% client-side</strong> — nothing you paste ever leaves your browser.</p>
+
+<h2>1 · The complete JSON escape table</h2>
+<p>JSON strings allow exactly <strong>eight</strong> escape forms. Anything else starting with <code>\</code> is invalid — a surprisingly common cause of <a href="https://jsonformatter.app/tools/json-validator">validator</a> errors after hand-editing config files.</p>
+<table>
+  <tr><th>Escape</th><th>Character</th><th>Notes</th></tr>
+  <tr><td><code>\"</code></td><td>Double quote <code>U+0022</code></td><td>Mandatory — a bare <code>"</code> ends the string</td></tr>
+  <tr><td><code>\\</code></td><td>Backslash <code>U+005C</code></td><td>Mandatory — a bare <code>\</code> starts an escape</td></tr>
+  <tr><td><code>\/</code></td><td>Solidus <code>/</code></td><td>Legal but optional; mostly a habit from embedding JSON in <code>&lt;script&gt;</code> tags</td></tr>
+  <tr><td><code>\b</code></td><td>Backspace <code>U+0008</code></td><td>Rarely seen in the wild</td></tr>
+  <tr><td><code>\f</code></td><td>Form feed <code>U+000C</code></td><td>Shows up in legacy mainstream-format exports</td></tr>
+  <tr><td><code>\n</code></td><td>Line feed <code>U+000A</code></td><td>Real newlines inside a string are <strong>illegal</strong> — use this</td></tr>
+  <tr><td><code>\r</code></td><td>Carriage return <code>U+000D</code></td><td>Windows line endings inside strings must be escaped</td></tr>
+  <tr><td><code>\t</code></td><td>Tab <code>U+0009</code></td><td>Pasting a literal tab from a terminal breaks strict parsers</td></tr>
+  <tr><td><code>\uXXXX</code></td><td>Unicode code unit</td><td>Four hex digits, BMP only — see surrogate pairs below</td></tr>
+</table>
+<div class="note">Test any escape sequence round-trip with the <a href="https://jsonformatter.app/tools/json-escape">JSON escape tool</a> (minimal or ASCII-safe <code>\uXXXX</code> mode) and <a href="https://jsonformatter.app/tools/json-unescape">JSON unescape</a> (which validates the result instead of silently returning garbage).</div>
+
+<h2>2 · Unicode: surrogate pairs and invisible characters</h2>
+<ul class="checks">
+  <li><strong>Astral characters need two escapes.</strong> <code>\uXXXX</code> covers one UTF-16 code unit, so 𝄞 (U+1D11E) is <code>\uD834\uDD1E</code> — a surrogate <em>pair</em>. A lone surrogate such as <code>\uD834</code> alone is invalid JSON and some parsers accept it silently, only to crash later.</li>
+  <li><strong>The PDF/Word copy trap.</strong> Documents convert hyphens and quotes to typographic ones (<code>U+2010</code>, <code>U+201C</code>) and spaces to <code>\u00A0</code> — all perfectly printable but structurally fatal when pasted as code. They're invisible in most editors; a tree viewer that shows raw escapes makes them obvious (try the <a href="https://jsonformatter.app/tools/json-viewer">JSON viewer</a>).</li>
+  <li><strong>U+2028 / U+2029.</strong> These line/paragraph separators are valid inside JSON strings, but before ES2019 JavaScript source code rejected them — old bundlers and templates can still choke on logs containing them.</li>
+  <li><strong>The BOM.</strong> RFC 8259 says producers MUST NOT add a UTF-8 BOM and parsers MAY ignore it — so plenty of parsers don't. A file that "looks fine" in an editor but fails with <code>Unexpected token ﻿</code> is almost always a BOM. Re-save without it.</li>
+</ul>
+
+<h2>3 · Number traps: where JSON silently loses data</h2>
+<table>
+  <tr><th>Pattern</th><th>What happens</th><th>Safe practice</th></tr>
+  <tr><td><code>0.1 + 0.2 != 0.3</code></td><td>IEEE-754 doubles; money, coordinates and rates drift</td><td>Serialize monetary values as strings, or round at the boundary</td></tr>
+  <tr><td>Integers above <code>2^53 - 1</code> (9007199254740991)</td><td><code>9007199254740993</code> parses to <code>...992</code> in every JS runtime — snowflake IDs, transaction IDs</td><td>Ship big IDs as strings; the <a href="https://jsonformatter.app/tools/json-validator">validator</a> flags lossy integers before they reach your code</td></tr>
+  <tr><td><code>NaN</code>, <code>Infinity</code>, <code>-Infinity</code></td><td>Not JSON. <code>JSON.stringify</code> quietly emits <code>null</code> for them</td><td>Use <code>null</code> explicitly, or a sentinel string</td></tr>
+  <tr><td><code>0x1F</code>, <code>017</code>, <code>+5</code>, <code>.5</code>, <code>5.</code></td><td>All invalid — no hex, no octal, no leading <code>+</code>, no bare fraction</td><td>Normal decimal form only</td></tr>
+  <tr><td><code>1e999</code></td><td>Grammatically legal, unrepresentable — JS evaluates it to <code>Infinity</code></td><td>Clamp at the producer</td></tr>
+</table>
+<div class="note">Debugging a generated client instead? The same errors show up as wrong types in code generation — <a href="https://jsonformatter.app/tools/json-to-java">Java</a>, <a href="https://jsonformatter.app/tools/json-to-csharp">C#</a>, <a href="https://jsonformatter.app/tools/json-to-python">Python</a> and <a href="https://jsonformatter.app/tools/json-to-rust">Rust</a> mappings all handle the 2^53 boundary differently. More on that in <a href="https://jsonformatter.app/news/json-to-java-csharp-python-rust">what code generators assume about your JSON</a>.</div>
+
+<h2>4 · The JSON-in-JSON double-escape</h2>
+<p>The most confusing sight in debugging: a value that looks like <code>"{\"a\": 1}"</code>. That's a JSON document <em>serialized as a string inside another JSON document</em> — logs, webhooks and message queues do this constantly. Strip one level of escaping and re-parse. Two signs you're looking at it: backslashes before every quote, and a validator that parses the envelope fine but the payload is one opaque string. The <a href="https://jsonformatter.app/tools/json-unescape">unescape tool</a> performs exactly this peeling and validates what's underneath; for nested payloads use <a href="https://jsonformatter.app/tools/jq-online">jq in the browser</a> (<code>.payload | fromjson</code>) as described in <a href="https://jsonformatter.app/news/json-transform-jq-jsonpath">running real jq client-side</a>.</p>
+
+<h2>5 · JSON vs JSON5 vs JSONC vs NDJSON</h2>
+<p>Four "JSON" formats with different strictness. Picking the wrong validator wastes hours — the errors read as nonsense when you check one dialect against another's grammar.</p>
+<table>
+  <tr><th></th><th>JSON (RFC 8259)</th><th>JSON5</th><th>JSONC</th><th>NDJSON</th></tr>
+  <tr><td>Comments</td><td>✗</td><td>✓ <code>//</code> and <code>/* */</code></td><td>✓</td><td>✗</td></tr>
+  <tr><td>Unquoted keys</td><td>✗</td><td>✓</td><td>✗</td><td>✗</td></tr>
+  <tr><td>Single-quoted strings</td><td>✗</td><td>✓</td><td>✗</td><td>✗</td></tr>
+  <tr><td>Trailing commas</td><td>✗</td><td>✓</td><td>✗</td><td>✗</td></tr>
+  <tr><td>Multiple documents</td><td>✗</td><td>✗</td><td>✗</td><td>✓ one per line</td></tr>
+  <tr><td>Typical home</td><td>APIs, data exchange</td><td>human-written config</td><td>VS Code / TS configs</td><td>log streams, bulk imports</td></tr>
+</table>
+<ul class="checks">
+  <li>Validate the config dialects with the <a href="https://jsonformatter.app/tools/json5-formatter">JSON5 formatter</a> and <a href="https://jsonformatter.app/tools/jsonc-validator">JSONC validator</a> — strict-mode tools will flag their comments as errors, and that's correct behavior.</li>
+  <li>NDJSON (newline-delimited) fails with "Unexpected token {" at line 2+ when pasted into a single-document parser. The <a href="https://jsonformatter.app/tools/ndjson-viewer">NDJSON viewer</a> reports per-line counts and errors — see <a href="https://jsonformatter.app/news/ndjson-line-counts-and-errors">why line-level errors matter</a>.</li>
+  <li>Not sure whether your use case even is JSON? The plain-English primer lives at <a href="https://jsonformatter.app/guides/what-is-json">What is JSON</a>, and the config-format comparison at <a href="https://jsonformatter.app/guides/json-vs-yaml-vs-toml">JSON vs YAML vs TOML</a>.</li>
+</ul>
+
+<h2>6 · Base64 inside JSON</h2>
+<p>Binary payloads (images, crypto, PDFs) travel inside JSON as base64 strings. Three things bite people:</p>
+<ul class="checks">
+  <li><strong>Two alphabets.</strong> Standard base64 uses <code>+</code> and <code>/</code>; the URL-safe variant (JWTs, query params) uses <code>-</code> and <code>_</code> and usually drops the <code>=</code> padding. Mixing them fails decode with a confusing "invalid character".</li>
+  <li><strong>Size.</strong> Base64 inflates payloads by ~33% — for large blobs it's often the reason an API suddenly hits a body-size limit. Minify the JSON envelope first with the <a href="https://jsonformatter.app/tools/json-minifier">minifier</a> (it reports real gzip savings, not just byte counts).</li>
+  <li><strong>Padding and MIME newlines.</strong> Pasted PEM-style blocks contain line breaks that strict decoders reject. A decoder that tolerates both is described in <a href="https://jsonformatter.app/news/base64-decoder-robustness">base64 decoder robustness</a>; round-trip either direction with <a href="https://jsonformatter.app/tools/json-to-base64">JSON→Base64</a> and <a href="https://jsonformatter.app/tools/base64-to-json">Base64→JSON</a>.</li>
+</ul>
+
+<h2>7 · Schemas: catching all of the above before runtime</h2>
+<p>Escape tables and number ranges are exactly the kind of contracts a JSON Schema expresses: <code>pattern</code> for strings, <code>maximum</code> / <code>multipleOf</code> for numbers, <code>format</code> for base64. Generate a first draft from a sample with the <a href="https://jsonformatter.app/tools/json-schema-generator">schema generator</a>, then validate incoming payloads with the <a href="https://jsonformatter.app/tools/json-schema-validator">AJV-based validator</a> — the workflow is walked through in <a href="https://jsonformatter.app/guides/how-to-validate-json-schema">how to validate JSON against a schema</a> and <a href="https://jsonformatter.app/news/json-schema-generator">generating draft-2020-12 schemas from examples</a>.</p>
+
+<div class="note">
+<p><strong>Why every tool here is browser-only:</strong> the fastest way to leak API keys and PII is pasting real payloads into a web tool that processes them server-side. Everything linked on this page parses in your browser tab — the privacy model is explained in <a href="https://jsonformatter.app/security">how jsonformatter.app keeps data local</a>, and the FAQ covers the edge cases in <a href="https://jsonformatter.app/faq">jsonformatter.app FAQ</a>.</p>
+</div>
+
+<footer>
+  <p><a href="https://jsonformatter.app/">JSON Formatter App</a> — format, validate, convert and inspect JSON entirely client-side. Free, no signup, no cookies.</p>
+  <p>Companion page: <a href="./index.html">The JSON Debugging Checklist</a> — symptom → cause → fix for the errors themselves.</p>
+</footer>
+</main>
+</body>
+</html>
